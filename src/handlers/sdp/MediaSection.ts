@@ -189,7 +189,8 @@ export class AnswerMediaSection extends MediaSection
 							opusMaxPlaybackRate,
 							videoGoogleStartBitrate,
 							videoGoogleMaxBitrate,
-							videoGoogleMinBitrate
+							videoGoogleMinBitrate,
+							opusMaxAverageBitrate
 						} = codecOptions;
 
 						const offerCodec = offerRtpParameters.codecs
@@ -220,6 +221,12 @@ export class AnswerMediaSection extends MediaSection
 								if (opusMaxPlaybackRate !== undefined)
 									codecParameters.maxplaybackrate = opusMaxPlaybackRate;
 
+								if (opusMaxAverageBitrate !== undefined) {
+									// only set the given bitrate if the server does not specify, or the requested value is less than the servers
+									if (!codecParameters.maxaveragebitrate || codecParameters.maxaveragebitrate > opusMaxAverageBitrate) {
+										codecParameters.maxaveragebitrate = opusMaxAverageBitrate;
+									}
+								}
 								break;
 							}
 
