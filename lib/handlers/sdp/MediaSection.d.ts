@@ -1,43 +1,63 @@
+import { IceParameters, IceCandidate, DtlsParameters, DtlsRole, PlainRtpParameters } from '../../Transport';
+import { ProducerCodecOptions } from '../../Producer';
+import { MediaKind, RtpParameters } from '../../RtpParameters';
+import { SctpParameters } from '../../SctpParameters';
 declare abstract class MediaSection {
     protected readonly _mediaObject: any;
     protected readonly _planB: boolean;
     constructor({ iceParameters, iceCandidates, dtlsParameters, planB }: {
-        iceParameters: any;
-        iceCandidates: any[];
-        dtlsParameters: any;
+        iceParameters?: IceParameters;
+        iceCandidates?: IceCandidate[];
+        dtlsParameters?: DtlsParameters;
         planB: boolean;
     });
-    abstract setDtlsRole(role: 'client' | 'server' | 'auto'): void;
+    abstract setDtlsRole(role: DtlsRole): void;
     readonly mid: string;
     readonly closed: boolean;
     getObject(): object;
-    /**
-     * @param {RTCIceParameters} iceParameters
-     */
-    setIceParameters(iceParameters: any): void;
+    setIceParameters(iceParameters: IceParameters): void;
     disable(): void;
     close(): void;
 }
 export declare class AnswerMediaSection extends MediaSection {
-    constructor(data: any);
-    /**
-     * @param {String} role
-     */
-    setDtlsRole(role: 'client' | 'server' | 'auto'): void;
+    constructor({ iceParameters, iceCandidates, dtlsParameters, sctpParameters, plainRtpParameters, planB, offerMediaObject, offerRtpParameters, answerRtpParameters, codecOptions, extmapAllowMixed }: {
+        iceParameters?: IceParameters;
+        iceCandidates?: IceCandidate[];
+        dtlsParameters?: DtlsParameters;
+        sctpParameters?: SctpParameters;
+        plainRtpParameters?: PlainRtpParameters;
+        planB?: boolean;
+        offerMediaObject: any;
+        offerRtpParameters?: RtpParameters;
+        answerRtpParameters?: RtpParameters;
+        codecOptions?: ProducerCodecOptions;
+        extmapAllowMixed?: boolean;
+    });
+    setDtlsRole(role: DtlsRole): void;
 }
 export declare class OfferMediaSection extends MediaSection {
-    constructor(data: any);
-    /**
-     * @param {String} role
-     */
-    setDtlsRole(role: 'client' | 'server' | 'auto'): void;
+    constructor({ iceParameters, iceCandidates, dtlsParameters, sctpParameters, plainRtpParameters, planB, mid, kind, offerRtpParameters, streamId, trackId, oldDataChannelSpec }: {
+        iceParameters?: IceParameters;
+        iceCandidates?: IceCandidate[];
+        dtlsParameters?: DtlsParameters;
+        sctpParameters?: SctpParameters;
+        plainRtpParameters?: PlainRtpParameters;
+        planB?: boolean;
+        mid: string;
+        kind: MediaKind | 'application';
+        offerRtpParameters?: RtpParameters;
+        streamId?: string;
+        trackId?: string;
+        oldDataChannelSpec?: boolean;
+    });
+    setDtlsRole(role: DtlsRole): void;
     planBReceive({ offerRtpParameters, streamId, trackId }: {
-        offerRtpParameters: any;
+        offerRtpParameters: RtpParameters;
         streamId: string;
         trackId: string;
     }): void;
     planBStopReceiving({ offerRtpParameters }: {
-        offerRtpParameters: any;
+        offerRtpParameters: RtpParameters;
     }): void;
 }
 export {};

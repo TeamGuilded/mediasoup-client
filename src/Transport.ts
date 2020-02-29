@@ -1,25 +1,25 @@
-// @ts-ignore
-import AwaitQueue from 'awaitqueue';
-import Logger from './Logger';
-import EnhancedEventEmitter from './EnhancedEventEmitter';
+import { AwaitQueue } from 'awaitqueue';
+import { Logger } from './Logger';
+import { EnhancedEventEmitter } from './EnhancedEventEmitter';
 import { UnsupportedError, InvalidStateError } from './errors';
 import * as utils from './utils';
 import * as ortc from './ortc';
-import Producer, { ProducerOptions } from './Producer';
-import Consumer, { ConsumerOptions } from './Consumer';
-import DataProducer, { DataProducerOptions } from './DataProducer';
-import DataConsumer, { DataConsumerOptions } from './DataConsumer';
+import { HandlerFactory, HandlerInterface } from './handlers/HandlerInterface';
+import { Producer, ProducerOptions } from './Producer';
+import { Consumer, ConsumerOptions } from './Consumer';
+import { DataProducer, DataProducerOptions } from './DataProducer';
+import { DataConsumer, DataConsumerOptions } from './DataConsumer';
 import { SctpParameters } from './SctpParameters';
 
 interface InternalTransportOptions extends TransportOptions
 {
 	direction: 'send' | 'recv';
-	Handler: any;
+	handlerFactory: HandlerFactory;
 	extendedRtpCapabilities: any;
 	canProduceByKind: CanProduceByKind;
 }
 
-export interface TransportOptions
+export type TransportOptions =
 {
 	id: string;
 	iceParameters: IceParameters;
@@ -33,77 +33,68 @@ export interface TransportOptions
 	appData?: any;
 }
 
-export interface CanProduceByKind
+export type CanProduceByKind =
 {
 	audio: boolean;
 	video: boolean;
 	[key: string]: boolean;
 }
 
-export interface IceParameters
+export type IceParameters =
 {
 	/**
 	 * ICE username fragment.
 	 * */
 	usernameFragment: string;
-
 	/**
 	 * ICE password.
 	 */
 	password: string;
-
 	/**
 	 * ICE Lite.
 	 */
 	iceLite?: boolean;
 }
 
-export interface IceCandidate
+export type IceCandidate =
 {
 	/**
 	 * Unique identifier that allows ICE to correlate candidates that appear on
 	 * multiple transports.
 	 */
 	foundation: string;
-
 	/**
 	 * The assigned priority of the candidate.
 	 */
 	priority: number;
-
 	/**
 	 * The IP address of the candidate.
 	 */
 	ip: string;
-
 	/**
 	 * The protocol of the candidate.
 	 */
 	protocol: 'udp' | 'tcp';
-
 	/**
 	 * The port for the candidate.
 	 */
 	port: number;
-
 	/**
 	 * The type of candidate..
 	 */
 	type: 'host' | 'srflx' | 'prflx' | 'relay';
-
 	/**
 	 * The type of TCP candidate.
 	 */
 	tcpType: 'active' | 'passive' | 'so';
 }
 
-export interface DtlsParameters
+export type DtlsParameters =
 {
 	/**
 	 * DTLS role. Default 'auto'.
 	 */
 	role?: DtlsRole;
-
 	/**
 	 * DTLS fingerprints.
 	 */
@@ -116,7 +107,7 @@ export interface DtlsParameters
  * certificate fingerprint value (in lowercase hex string as expressed utilizing
  * the syntax of "fingerprint" in RFC 4572 Section 5).
  */
-export interface DtlsFingerprint
+export type DtlsFingerprint =
 {
 	algorithm: string;
 	value: string;
@@ -124,63 +115,62 @@ export interface DtlsFingerprint
 
 export type DtlsRole = 'auto' | 'client' | 'server';
 
-export type ConnectionState = 'new' | 'connecting' | 'connected' | 'failed' | 'closed';
+export type ConnectionState =
+	| 'new'
+	| 'connecting'
+	| 'connected'
+	| 'failed'
+	| 'disconnected'
+	| 'closed';
+
+export type PlainRtpParameters =
+{
+	ip: string;
+	ipVersion: 4 | 6;
+	port: number;
+};
 
 const logger = new Logger('Transport');
 
-export default class Transport extends EnhancedEventEmitter
+export class Transport extends EnhancedEventEmitter
 {
 	// Id.
 	private readonly _id: string;
-
 	// Closed flag.
 	private _closed = false;
-
 	// Direction.
 	private readonly _direction: 'send' | 'recv';
-
 	// Extended RTP capabilities.
 	private readonly _extendedRtpCapabilities: any;
-
 	// Whether we can produce audio/video based on computed extended RTP
 	// capabilities.
 	private readonly _canProduceByKind: CanProduceByKind;
-
 	// SCTP max message size if enabled, null otherwise.
 	private readonly _maxSctpMessageSize?: number | null;
-
-	// RTC handler instance.
-	private readonly _handler: any;
-
+	// RTC handler isntance.
+	private readonly _handler: HandlerInterface;
 	// Transport connection state.
 	private _connectionState: ConnectionState = 'new';
-
 	// App custom data.
 	private readonly _appData: any;
-
 	// Map of Producers indexed by id.
 	private readonly _producers: Map<string, Producer> = new Map();
-
 	// Map of Consumers indexed by id.
 	private readonly _consumers: Map<string, Consumer> = new Map();
-
 	// Map of DataProducers indexed by id.
 	private readonly _dataProducers: Map<string, DataProducer> = new Map();
-
 	// Map of DataConsumers indexed by id.
 	private readonly _dataConsumers: Map<string, DataConsumer> = new Map();
-
 	// Whether the Consumer for RTP probation has been created.
 	private _probatorConsumerCreated = false;
-
 	// AwaitQueue instance to make async tasks happen sequentially.
 	private readonly _awaitQueue = new AwaitQueue({ ClosedErrorClass: InvalidStateError });
 
 	/**
-	 * @emits {transportLocalParameters: Object, callback: Function, errback: Function} connect
-	 * @emits {connectionState: ConnectionState} connectionstatechange
-	 * @emits {producerLocalParameters: Object, callback: Function, errback: Function} produce
-	 * @emits {dataProducerLocalParameters: Object, callback: Function, errback: Function} producedata
+	 * @emits connect - (transportLocalParameters: any, callback: Function, errback: Function)
+	 * @emits connectionstatechange - (connectionState: ConnectionState)
+	 * @emits produce - (producerLocalParameters: any, callback: Function, errback: Function)
+	 * @emits producedata - (dataProducerLocalParameters: any, callback: Function, errback: Function)
 	 */
 	constructor(
 		{
@@ -195,13 +185,13 @@ export default class Transport extends EnhancedEventEmitter
 			additionalSettings,
 			proprietaryConstraints,
 			appData,
-			Handler,
+			handlerFactory,
 			extendedRtpCapabilities,
 			canProduceByKind
 		}: InternalTransportOptions
 	)
 	{
-		super(logger);
+		super();
 
 		logger.debug('constructor() [id:%s, direction:%s]', id, direction);
 
@@ -221,7 +211,9 @@ export default class Transport extends EnhancedEventEmitter
 		delete additionalSettings.rtcpMuxPolicy;
 		delete additionalSettings.sdpSemantics;
 
-		this._handler = new Handler(
+		this._handler = handlerFactory();
+
+		this._handler.run(
 			{
 				direction,
 				iceParameters,
@@ -267,7 +259,7 @@ export default class Transport extends EnhancedEventEmitter
 	/**
 	 * RTC handler instance.
 	 */
-	get handler(): any
+	get handler(): HandlerInterface
 	{
 		return this._handler;
 	}
@@ -348,7 +340,7 @@ export default class Transport extends EnhancedEventEmitter
 	 *
 	 * @returns {RTCStatsReport}
 	 */
-	async getStats(): Promise<any>
+	async getStats(): Promise<RTCStatsReport>
 	{
 		if (this._closed)
 			throw new InvalidStateError('closed');
@@ -373,7 +365,7 @@ export default class Transport extends EnhancedEventEmitter
 
 		// Enqueue command.
 		return this._awaitQueue.push(
-			async () => this._handler.restartIce({ iceParameters }));
+			async () => this._handler.restartIce(iceParameters));
 	}
 
 	/**
@@ -393,7 +385,7 @@ export default class Transport extends EnhancedEventEmitter
 
 		// Enqueue command.
 		return this._awaitQueue.push(
-			async () => this._handler.updateIceServers({ iceServers }));
+			async () => this._handler.updateIceServers(iceServers));
 	}
 
 	/**
@@ -404,6 +396,7 @@ export default class Transport extends EnhancedEventEmitter
 			track,
 			encodings,
 			codecOptions,
+			stopTracks = true,
 			appData = {}
 		}: ProducerOptions = {}
 	): Promise<Producer>
@@ -467,7 +460,7 @@ export default class Transport extends EnhancedEventEmitter
 						});
 				}
 
-				const { localId, rtpParameters } = await this._handler.send(
+				const { localId, rtpParameters, rtpSender } = await this._handler.send(
 					{
 						track,
 						encodings : normalizedEncodings,
@@ -476,6 +469,9 @@ export default class Transport extends EnhancedEventEmitter
 
 				try
 				{
+					// This will fill rtpParameters's missing fields with default values.
+					ortc.validateRtpParameters(rtpParameters);
+
 					const { id } = await this.safeEmitAsPromise(
 						'produce',
 						{
@@ -484,8 +480,8 @@ export default class Transport extends EnhancedEventEmitter
 							appData
 						});
 
-					const producer =
-						new Producer({ id, localId, track, rtpParameters, appData });
+					const producer = new Producer(
+						{ id, localId, rtpSender, track, rtpParameters, stopTracks, appData });
 
 					this._producers.set(producer.id, producer);
 					this._handleProducer(producer);
@@ -494,7 +490,7 @@ export default class Transport extends EnhancedEventEmitter
 				}
 				catch (error)
 				{
-					this._handler.stopSending({ localId })
+					this._handler.stopSending(localId)
 						.catch(() => {});
 
 					throw error;
@@ -504,8 +500,11 @@ export default class Transport extends EnhancedEventEmitter
 			// failed due to closed Transport.
 			.catch((error: Error) =>
 			{
-				try { track.stop(); }
-				catch (error2) {}
+				if (stopTracks)
+				{
+					try { track.stop(); }
+					catch (error2) {}
+				}
 
 				throw error;
 			});
@@ -536,8 +535,6 @@ export default class Transport extends EnhancedEventEmitter
 			throw new TypeError('missing producerId');
 		else if (kind !== 'audio' && kind !== 'video')
 			throw new TypeError(`invalid kind '${kind}'`);
-		else if (typeof rtpParameters !== 'object')
-			throw new TypeError('missing rtpParameters');
 		else if (this.listenerCount('connect') === 0 && this._connectionState === 'new')
 			throw new TypeError('no "connect" listener set into this transport');
 		else if (appData && typeof appData !== 'object')
@@ -554,11 +551,11 @@ export default class Transport extends EnhancedEventEmitter
 				if (!canConsume)
 					throw new UnsupportedError('cannot consume this Producer');
 
-				const { localId, track } =
-					await this._handler.receive({ id, kind, rtpParameters });
+				const { localId, rtpReceiver, track } =
+					await this._handler.receive({ trackId: id, kind, rtpParameters });
 
-				const consumer =
-					new Consumer({ id, localId, producerId, track, rtpParameters, appData });
+				const consumer = new Consumer(
+					{ id, localId, producerId, rtpReceiver, track, rtpParameters, appData });
 
 				this._consumers.set(consumer.id, consumer);
 				this._handleConsumer(consumer);
@@ -574,7 +571,7 @@ export default class Transport extends EnhancedEventEmitter
 
 						await this._handler.receive(
 							{
-								id            : 'probator',
+								trackId       : 'probator',
 								kind          : 'video',
 								rtpParameters : probatorRtpParameters
 							});
@@ -585,7 +582,7 @@ export default class Transport extends EnhancedEventEmitter
 					}
 					catch (error)
 					{
-						logger.warn(
+						logger.error(
 							'consume() | failed to create Consumer for RTP probation:%o',
 							error);
 					}
@@ -645,6 +642,9 @@ export default class Transport extends EnhancedEventEmitter
 						protocol
 					});
 
+				// This will fill sctpStreamParameters's missing fields with default values.
+				ortc.validateSctpStreamParameters(sctpStreamParameters);
+
 				const { id } = await this.safeEmitAsPromise(
 					'producedata',
 					{
@@ -690,12 +690,13 @@ export default class Transport extends EnhancedEventEmitter
 			throw new TypeError('missing id');
 		else if (typeof dataProducerId !== 'string')
 			throw new TypeError('missing dataProducerId');
-		else if (typeof sctpStreamParameters !== 'object')
-			throw new TypeError('missing sctpStreamParameters');
 		else if (this.listenerCount('connect') === 0 && this._connectionState === 'new')
 			throw new TypeError('no "connect" listener set into this transport');
 		else if (appData && typeof appData !== 'object')
 			throw new TypeError('if given, appData must be an object');
+
+		// This may throw.
+		ortc.validateSctpStreamParameters(sctpStreamParameters);
 
 		// Enqueue command.
 		return this._awaitQueue.push(
@@ -770,14 +771,14 @@ export default class Transport extends EnhancedEventEmitter
 				return;
 
 			this._awaitQueue.push(
-				async () => this._handler.stopSending({ localId: producer.localId }))
+				async () => this._handler.stopSending(producer.localId))
 				.catch((error: Error) => logger.warn('producer.close() failed:%o', error));
 		});
 
 		producer.on('@replacetrack', (track, callback, errback) =>
 		{
 			this._awaitQueue.push(
-				async () => this._handler.replaceTrack({ localId: producer.localId, track }))
+				async () => this._handler.replaceTrack(producer.localId, track))
 				.then(callback)
 				.catch(errback);
 		});
@@ -786,7 +787,7 @@ export default class Transport extends EnhancedEventEmitter
 		{
 			this._awaitQueue.push(
 				async () => (
-					this._handler.setMaxSpatialLayer({ localId: producer.localId, spatialLayer })
+					this._handler.setMaxSpatialLayer(producer.localId, spatialLayer)
 				))
 				.then(callback)
 				.catch(errback);
@@ -796,7 +797,7 @@ export default class Transport extends EnhancedEventEmitter
 		{
 			this._awaitQueue.push(
 				async () => (
-					this._handler.setRtpEncodingParameters({ localId: producer.localId, params })
+					this._handler.setRtpEncodingParameters(producer.localId, params)
 				))
 				.then(callback)
 				.catch(errback);
@@ -807,7 +808,7 @@ export default class Transport extends EnhancedEventEmitter
 			if (this._closed)
 				return errback(new InvalidStateError('closed'));
 
-			this._handler.getSenderStats({ localId: producer.localId })
+			this._handler.getSenderStats(producer.localId)
 				.then(callback)
 				.catch(errback);
 		});
@@ -823,7 +824,7 @@ export default class Transport extends EnhancedEventEmitter
 				return;
 
 			this._awaitQueue.push(
-				async () => this._handler.stopReceiving({ localId: consumer.localId }))
+				async () => this._handler.stopReceiving(consumer.localId))
 				.catch(() => {});
 		});
 
@@ -832,7 +833,7 @@ export default class Transport extends EnhancedEventEmitter
 			if (this._closed)
 				return errback(new InvalidStateError('closed'));
 
-			this._handler.getReceiverStats({ localId: consumer.localId })
+			this._handler.getReceiverStats(consumer.localId)
 				.then(callback)
 				.catch(errback);
 		});

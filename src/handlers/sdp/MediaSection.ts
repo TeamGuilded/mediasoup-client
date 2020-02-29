@@ -1,30 +1,43 @@
 import * as utils from '../../utils';
+import {
+	IceParameters,
+	IceCandidate,
+	DtlsParameters,
+	DtlsRole,
+	PlainRtpParameters
+} from '../../Transport';
+import { ProducerCodecOptions } from '../../Producer';
+import {
+	MediaKind,
+	RtpParameters,
+	RtpCodecParameters,
+	RtpHeaderExtensionParameters
+} from '../../RtpParameters';
+import { SctpParameters } from '../../SctpParameters';
 
 abstract class MediaSection
 {
 	// SDP media object.
 	protected readonly _mediaObject: any;
-
 	// Whether this is Plan-B SDP.
 	protected readonly _planB: boolean;
 
 	constructor(
 		{
-			iceParameters = undefined,
-			iceCandidates = [],
-			dtlsParameters = undefined,
+			iceParameters,
+			iceCandidates,
+			dtlsParameters,
 			planB = false
 		}:
 		{
-			iceParameters: any;
-			iceCandidates: any[];
-			dtlsParameters: any;
+			iceParameters?: IceParameters;
+			iceCandidates?: IceCandidate[];
+			dtlsParameters?: DtlsParameters;
 			planB: boolean;
 		}
 	)
 	{
 		this._mediaObject = {};
-
 		this._planB = planB;
 
 		if (iceParameters)
@@ -65,7 +78,7 @@ abstract class MediaSection
 		}
 	}
 
-	abstract setDtlsRole(role: 'client' | 'server' | 'auto'): void;
+	abstract setDtlsRole(role: DtlsRole): void;
 
 	get mid(): string
 	{
@@ -82,10 +95,7 @@ abstract class MediaSection
 		return this._mediaObject;
 	}
 
-	/**
-	 * @param {RTCIceParameters} iceParameters
-	 */
-	setIceParameters(iceParameters: any): void
+	setIceParameters(iceParameters: IceParameters): void
 	{
 		this._mediaObject.iceUfrag = iceParameters.usernameFragment;
 		this._mediaObject.icePwd = iceParameters.password;
@@ -115,25 +125,42 @@ abstract class MediaSection
 		delete this._mediaObject.simulcast;
 		delete this._mediaObject.simulcast_03;
 		delete this._mediaObject.rids;
-		delete this._mediaObject.ext;
 		delete this._mediaObject.extmapAllowMixed;
 	}
 }
 
 export class AnswerMediaSection extends MediaSection
 {
-	constructor(data: any)
-	{
-		super(data);
-
-		const {
+	constructor(
+		{
+			iceParameters,
+			iceCandidates,
+			dtlsParameters,
 			sctpParameters,
+			plainRtpParameters,
+			planB = false,
 			offerMediaObject,
 			offerRtpParameters,
 			answerRtpParameters,
-			plainRtpParameters,
-			codecOptions
-		} = data;
+			codecOptions,
+			extmapAllowMixed = false
+		}:
+		{
+			iceParameters?: IceParameters;
+			iceCandidates?: IceCandidate[];
+			dtlsParameters?: DtlsParameters;
+			sctpParameters?: SctpParameters;
+			plainRtpParameters?: PlainRtpParameters;
+			planB?: boolean;
+			offerMediaObject: any;
+			offerRtpParameters?: RtpParameters;
+			answerRtpParameters?: RtpParameters;
+			codecOptions?: ProducerCodecOptions;
+			extmapAllowMixed?: boolean;
+		}
+	)
+	{
+		super({ iceParameters, iceCandidates, dtlsParameters, planB });
 
 		this._mediaObject.mid = String(offerMediaObject.mid);
 		this._mediaObject.type = offerMediaObject.type;
@@ -169,7 +196,7 @@ export class AnswerMediaSection extends MediaSection
 					const rtp: any =
 					{
 						payload : codec.payloadType,
-						codec   : codec.mimeType.replace(/^.*\//, ''),
+						codec   : getCodecName(codec),
 						rate    : codec.clockRate
 					};
 
@@ -187,6 +214,7 @@ export class AnswerMediaSection extends MediaSection
 							opusFec,
 							opusDtx,
 							opusMaxPlaybackRate,
+							opusPtime,
 							videoGoogleStartBitrate,
 							videoGoogleMaxBitrate,
 							videoGoogleMinBitrate,
@@ -219,7 +247,15 @@ export class AnswerMediaSection extends MediaSection
 								}
 
 								if (opusMaxPlaybackRate !== undefined)
+								{
 									codecParameters.maxplaybackrate = opusMaxPlaybackRate;
+								}
+
+								if (opusPtime !== undefined)
+								{
+									offerCodec.parameters.ptime = opusPtime;
+									codecParameters.ptime = opusPtime;
+								}
 
 								if (opusMaxAverageBitrate !== undefined) {
 									// only set the given bitrate if the server does not specify, or the requested value is less than the servers
@@ -266,22 +302,19 @@ export class AnswerMediaSection extends MediaSection
 					if (fmtp.config)
 						this._mediaObject.fmtp.push(fmtp);
 
-					if (codec.rtcpFeedback)
+					for (const fb of codec.rtcpFeedback)
 					{
-						for (const fb of codec.rtcpFeedback)
-						{
-							this._mediaObject.rtcpFb.push(
-								{
-									payload : codec.payloadType,
-									type    : fb.type,
-									subtype : fb.parameter || ''
-								});
-						}
+						this._mediaObject.rtcpFb.push(
+							{
+								payload : codec.payloadType,
+								type    : fb.type,
+								subtype : fb.parameter
+							});
 					}
 				}
 
 				this._mediaObject.payloads = answerRtpParameters.codecs
-					.map((codec: any) => codec.payloadType)
+					.map((codec: RtpCodecParameters) => codec.payloadType)
 					.join(' ');
 
 				this._mediaObject.ext = [];
@@ -290,7 +323,7 @@ export class AnswerMediaSection extends MediaSection
 				{
 					// Don't add a header extension if not present in the offer.
 					const found = (offerMediaObject.ext || [])
-						.some((localExt: any) => localExt.uri === ext.uri);
+						.some((localExt: RtpHeaderExtensionParameters) => localExt.uri === ext.uri);
 
 					if (!found)
 						continue;
@@ -303,8 +336,13 @@ export class AnswerMediaSection extends MediaSection
 				}
 
 				// Allow both 1 byte and 2 bytes length header extensions.
-				if (offerMediaObject.extmapAllowMixed === 'extmap-allow-mixed')
+				if (
+					extmapAllowMixed &&
+					offerMediaObject.extmapAllowMixed === 'extmap-allow-mixed'
+				)
+				{
 					this._mediaObject.extmapAllowMixed = 'extmap-allow-mixed';
+				}
 
 				// Simulcast.
 				if (offerMediaObject.simulcast)
@@ -388,10 +426,7 @@ export class AnswerMediaSection extends MediaSection
 		}
 	}
 
-	/**
-	 * @param {String} role
-	 */
-	setDtlsRole(role: 'client' | 'server' | 'auto'): void
+	setDtlsRole(role: DtlsRole): void
 	{
 		switch (role)
 		{
@@ -410,20 +445,38 @@ export class AnswerMediaSection extends MediaSection
 
 export class OfferMediaSection extends MediaSection
 {
-	constructor(data: any)
-	{
-		super(data);
-
-		const {
+	constructor(
+		{
+			iceParameters,
+			iceCandidates,
+			dtlsParameters,
 			sctpParameters,
 			plainRtpParameters,
+			planB = false,
 			mid,
 			kind,
 			offerRtpParameters,
 			streamId,
 			trackId,
-			oldDataChannelSpec
-		} = data;
+			oldDataChannelSpec = false
+		}:
+		{
+			iceParameters?: IceParameters;
+			iceCandidates?: IceCandidate[];
+			dtlsParameters?: DtlsParameters;
+			sctpParameters?: SctpParameters;
+			plainRtpParameters?: PlainRtpParameters;
+			planB?: boolean;
+			mid: string;
+			kind: MediaKind | 'application';
+			offerRtpParameters?: RtpParameters;
+			streamId?: string;
+			trackId?: string;
+			oldDataChannelSpec?: boolean;
+		}
+	)
+	{
+		super({ iceParameters, iceCandidates, dtlsParameters, planB });
 
 		this._mediaObject.mid = String(mid);
 		this._mediaObject.type = kind;
@@ -468,7 +521,7 @@ export class OfferMediaSection extends MediaSection
 					const rtp: any =
 					{
 						payload : codec.payloadType,
-						codec   : codec.mimeType.replace(/^.*\//, ''),
+						codec   : getCodecName(codec),
 						rate    : codec.clockRate
 					};
 
@@ -477,42 +530,36 @@ export class OfferMediaSection extends MediaSection
 
 					this._mediaObject.rtp.push(rtp);
 
-					if (codec.parameters)
+					const fmtp =
 					{
-						const fmtp =
-						{
-							payload : codec.payloadType,
-							config  : ''
-						};
+						payload : codec.payloadType,
+						config  : ''
+					};
 
-						for (const key of Object.keys(codec.parameters))
-						{
-							if (fmtp.config)
-								fmtp.config += ';';
-
-							fmtp.config += `${key}=${codec.parameters[key]}`;
-						}
-
+					for (const key of Object.keys(codec.parameters))
+					{
 						if (fmtp.config)
-							this._mediaObject.fmtp.push(fmtp);
+							fmtp.config += ';';
+
+						fmtp.config += `${key}=${codec.parameters[key]}`;
 					}
 
-					if (codec.rtcpFeedback)
+					if (fmtp.config)
+						this._mediaObject.fmtp.push(fmtp);
+
+					for (const fb of codec.rtcpFeedback)
 					{
-						for (const fb of codec.rtcpFeedback)
-						{
-							this._mediaObject.rtcpFb.push(
-								{
-									payload : codec.payloadType,
-									type    : fb.type,
-									subtype : fb.parameter || ''
-								});
-						}
+						this._mediaObject.rtcpFb.push(
+							{
+								payload : codec.payloadType,
+								type    : fb.type,
+								subtype : fb.parameter
+							});
 					}
 				}
 
 				this._mediaObject.payloads = offerRtpParameters.codecs
-					.map((codec: any) => codec.payloadType)
+					.map((codec: RtpCodecParameters) => codec.payloadType)
 					.join(' ');
 
 				this._mediaObject.ext = [];
@@ -617,10 +664,8 @@ export class OfferMediaSection extends MediaSection
 		}
 	}
 
-	/**
-	 * @param {String} role
-	 */
-	setDtlsRole(role: 'client' | 'server' | 'auto'): void // eslint-disable-line @typescript-eslint/no-unused-vars
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	setDtlsRole(role: DtlsRole): void
 	{
 		// Always 'actpass'.
 		this._mediaObject.setup = 'actpass';
@@ -630,12 +675,14 @@ export class OfferMediaSection extends MediaSection
 		{
 			offerRtpParameters,
 			streamId,
-			trackId }:
+			trackId
+		}:
 		{
-			offerRtpParameters: any;
+			offerRtpParameters: RtpParameters;
 			streamId: string;
 			trackId: string;
-		}): void
+		}
+	): void
 	{
 		const encoding = offerRtpParameters.encodings[0];
 		const ssrc = encoding.ssrc;
@@ -688,7 +735,9 @@ export class OfferMediaSection extends MediaSection
 		}
 	}
 
-	planBStopReceiving({ offerRtpParameters }: { offerRtpParameters: any }): void
+	planBStopReceiving(
+		{ offerRtpParameters }: { offerRtpParameters: RtpParameters }
+	): void
 	{
 		const encoding = offerRtpParameters.encodings[0];
 		const ssrc = encoding.ssrc;
@@ -705,4 +754,15 @@ export class OfferMediaSection extends MediaSection
 				.filter((group: any) => group.ssrcs !== `${ssrc} ${rtxSsrc}`);
 		}
 	}
+}
+
+function getCodecName(codec: RtpCodecParameters): string
+{
+	const MimeTypeRegex = new RegExp('^(audio|video)/(.+)', 'i');
+	const mimeTypeMatch = MimeTypeRegex.exec(codec.mimeType);
+
+	if (!mimeTypeMatch)
+		throw new TypeError('invalid codec.mimeType');
+
+	return mimeTypeMatch[2];
 }

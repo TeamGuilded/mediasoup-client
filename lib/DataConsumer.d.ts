@@ -1,14 +1,14 @@
-import EnhancedEventEmitter from './EnhancedEventEmitter';
+import { EnhancedEventEmitter } from './EnhancedEventEmitter';
 import { SctpStreamParameters } from './SctpParameters';
-export interface DataConsumerOptions {
+export declare type DataConsumerOptions = {
     id?: string;
     dataProducerId?: string;
     sctpStreamParameters: SctpStreamParameters;
     label?: string;
     protocol?: string;
     appData?: any;
-}
-export default class DataConsumer extends EnhancedEventEmitter {
+};
+export declare class DataConsumer extends EnhancedEventEmitter {
     private readonly _id;
     private readonly _dataProducerId;
     private readonly _dataChannel;
@@ -18,9 +18,9 @@ export default class DataConsumer extends EnhancedEventEmitter {
     /**
      * @emits transportclose
      * @emits open
-     * @emits {Object} error
+     * @emits error - (error: Error)
      * @emits close
-     * @emits {Any} message
+     * @emits message - (message: any)
      * @emits @close
      */
     constructor({ id, dataProducerId, dataChannel, sctpStreamParameters, appData }: {

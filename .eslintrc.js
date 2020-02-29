@@ -5,7 +5,6 @@ const eslintConfig =
 		browser : true,
 		es6     : true,
 		node    : true
-		// 'jest/globals': true
 	},
 	plugins       : [],
 	settings      : {},
@@ -210,7 +209,8 @@ switch (process.env.MEDIASOUP_NODE_LANGUAGE)
 					ignoreRestSiblings : false
 				}
 			],
-			'@typescript-eslint/no-use-before-define' : 0
+			'@typescript-eslint/no-use-before-define' : 0,
+			'@typescript-eslint/no-empty-function'    : 0
 		};
 
 		break;

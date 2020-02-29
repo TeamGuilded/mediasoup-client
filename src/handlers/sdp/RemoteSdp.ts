@@ -1,81 +1,65 @@
 import * as sdpTransform from 'sdp-transform';
-import Logger from '../../Logger';
+import { Logger } from '../../Logger';
 import { AnswerMediaSection, OfferMediaSection } from './MediaSection';
-import { IceParameters, IceCandidate, DtlsParameters, DtlsRole } from '../../Transport';
+import {
+	IceParameters,
+	IceCandidate,
+	DtlsParameters,
+	DtlsRole,
+	PlainRtpParameters
+} from '../../Transport';
+import { ProducerCodecOptions } from '../../Producer';
+import { MediaKind, RtpParameters } from '../../RtpParameters';
 import { SctpParameters } from '../../SctpParameters';
 
 const logger = new Logger('RemoteSdp');
 
-export default class RemoteSdp
+export class RemoteSdp
 {
 	// Remote ICE parameters.
-	private _iceParameters: IceParameters;
-
+	private _iceParameters?: IceParameters;
 	// Remote ICE candidates.
-	private readonly _iceCandidates: IceCandidate[];
-
+	private readonly _iceCandidates?: IceCandidate[];
 	// Remote DTLS parameters.
-	private readonly _dtlsParameters: DtlsParameters;
-
+	private readonly _dtlsParameters?: DtlsParameters;
 	// Remote SCTP parameters.
-	private readonly _sctpParameters: SctpParameters;
-
-	// Parameters for plain RTP (no SRTP nor DTLS no BUNDLE). Fields:
-	// @type {Object}
-	//
-	// Fields:
-	// @param {String} ip
-	// @param {Number} ipVersion - 4 or 6.
-	// @param {Number} port
-	private readonly _plainRtpParameters: any;
-
+	private readonly _sctpParameters?: SctpParameters;
+	// Parameters for plain RTP (no SRTP nor DTLS no BUNDLE).
+	private readonly _plainRtpParameters?: PlainRtpParameters;
 	// Whether this is Plan-B SDP.
 	private readonly _planB: boolean;
-
 	// MediaSection instances indexed by MID.
-	private _mediaSections: Map<string, any>;
-
+	private _mediaSections: Map<string, any> = new Map();
 	// First MID.
-	private _firstMid: string;
-
+	private _firstMid?: string;
 	// SDP object.
 	private readonly _sdpObject: any;
 
 	constructor(
 		{
-			iceParameters = undefined,
-			iceCandidates = undefined,
-			dtlsParameters = undefined,
-			sctpParameters = undefined,
-			plainRtpParameters = undefined,
+			iceParameters,
+			iceCandidates,
+			dtlsParameters,
+			sctpParameters,
+			plainRtpParameters,
 			planB = false
 		}:
 		{
-			iceParameters?: any;
-			iceCandidates?: any;
-			dtlsParameters?: any;
-			sctpParameters?: any;
-			plainRtpParameters?: any;
+			iceParameters?: IceParameters;
+			iceCandidates?: IceCandidate[];
+			dtlsParameters?: DtlsParameters;
+			sctpParameters?: SctpParameters;
+			plainRtpParameters?: PlainRtpParameters;
 			planB?: boolean;
 		}
 	)
 	{
 		this._iceParameters = iceParameters;
-
 		this._iceCandidates = iceCandidates;
-
 		this._dtlsParameters = dtlsParameters;
-
 		this._sctpParameters = sctpParameters;
-
 		this._plainRtpParameters = plainRtpParameters;
-
 		this._planB = planB;
-
-		this._mediaSections = new Map();
-
-		this._firstMid = undefined;
-
 		this._sdpObject =
 		{
 			version : 0,
@@ -99,7 +83,7 @@ export default class RemoteSdp
 			this._sdpObject.icelite = 'ice-lite';
 		}
 
-		// If DTLS parameters are given assume WebRTC and BUNDLE.
+		// If DTLS parameters are given, assume WebRTC and BUNDLE.
 		if (dtlsParameters)
 		{
 			this._sdpObject.msidSemantic = { semantic: 'WMS', token: '*' };
@@ -116,7 +100,7 @@ export default class RemoteSdp
 			this._sdpObject.groups = [ { type: 'BUNDLE', mids: '' } ];
 		}
 
-		// If there are plain parameters override SDP origin.
+		// If there are plain RPT parameters, override SDP origin.
 		if (plainRtpParameters)
 		{
 			this._sdpObject.origin.address = plainRtpParameters.ip;
@@ -124,7 +108,7 @@ export default class RemoteSdp
 		}
 	}
 
-	updateIceParameters(iceParameters: any): void
+	updateIceParameters(iceParameters: IceParameters): void
 	{
 		logger.debug(
 			'updateIceParameters() [iceParameters:%o]',
@@ -151,7 +135,7 @@ export default class RemoteSdp
 		}
 	}
 
-	getNextMediaSectionIdx(): any
+	getNextMediaSectionIdx(): { idx: number; reuseMid: boolean }
 	{
 		let idx = -1;
 
@@ -165,7 +149,7 @@ export default class RemoteSdp
 		}
 
 		// If no closed media section is found, return next one.
-		return { idx: this._mediaSections.size, reuseMid: null };
+		return { idx: this._mediaSections.size, reuseMid: false };
 	}
 
 	send(
@@ -174,14 +158,16 @@ export default class RemoteSdp
 			reuseMid,
 			offerRtpParameters,
 			answerRtpParameters,
-			codecOptions
+			codecOptions,
+			extmapAllowMixed = false
 		}:
 		{
 			offerMediaObject: any;
 			reuseMid?: boolean;
-			offerRtpParameters: any;
-			answerRtpParameters: any;
-			codecOptions: any;
+			offerRtpParameters: RtpParameters;
+			answerRtpParameters: RtpParameters;
+			codecOptions?: ProducerCodecOptions;
+			extmapAllowMixed? : boolean;
 		}
 	): void
 	{
@@ -195,7 +181,8 @@ export default class RemoteSdp
 				offerMediaObject,
 				offerRtpParameters,
 				answerRtpParameters,
-				codecOptions
+				codecOptions,
+				extmapAllowMixed
 			});
 
 		// Unified-Plan with closed media section replacement.
@@ -225,8 +212,8 @@ export default class RemoteSdp
 		}:
 		{
 			mid: string;
-			kind: string;
-			offerRtpParameters: any;
+			kind: MediaKind;
+			offerRtpParameters: RtpParameters;
 			streamId: string;
 			trackId: string;
 		}
@@ -292,8 +279,14 @@ export default class RemoteSdp
 	}
 
 	planBStopReceiving(
-		{ mid, offerRtpParameters }:
-		{ mid: string; offerRtpParameters: any }
+		{
+			mid,
+			offerRtpParameters
+		}:
+		{
+			mid: string;
+			offerRtpParameters: RtpParameters;
+		}
 	): void
 	{
 		const mediaSection = this._mediaSections.get(mid);
@@ -317,7 +310,10 @@ export default class RemoteSdp
 		this._addMediaSection(mediaSection);
 	}
 
-	receiveSctpAssociation({ oldDataChannelSpec = false } = {}): void
+	receiveSctpAssociation(
+		{ oldDataChannelSpec = false }:
+		{ oldDataChannelSpec?: boolean } = {}
+	): void
 	{
 		const mediaSection = new OfferMediaSection(
 			{

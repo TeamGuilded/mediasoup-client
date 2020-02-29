@@ -1,16 +1,17 @@
-import EnhancedEventEmitter from './EnhancedEventEmitter';
-import Producer, { ProducerOptions } from './Producer';
-import Consumer, { ConsumerOptions } from './Consumer';
-import DataProducer, { DataProducerOptions } from './DataProducer';
-import DataConsumer, { DataConsumerOptions } from './DataConsumer';
+import { EnhancedEventEmitter } from './EnhancedEventEmitter';
+import { HandlerFactory, HandlerInterface } from './handlers/HandlerInterface';
+import { Producer, ProducerOptions } from './Producer';
+import { Consumer, ConsumerOptions } from './Consumer';
+import { DataProducer, DataProducerOptions } from './DataProducer';
+import { DataConsumer, DataConsumerOptions } from './DataConsumer';
 import { SctpParameters } from './SctpParameters';
 interface InternalTransportOptions extends TransportOptions {
     direction: 'send' | 'recv';
-    Handler: any;
+    handlerFactory: HandlerFactory;
     extendedRtpCapabilities: any;
     canProduceByKind: CanProduceByKind;
 }
-export interface TransportOptions {
+export declare type TransportOptions = {
     id: string;
     iceParameters: IceParameters;
     iceCandidates: IceCandidate[];
@@ -21,13 +22,13 @@ export interface TransportOptions {
     additionalSettings?: any;
     proprietaryConstraints?: any;
     appData?: any;
-}
-export interface CanProduceByKind {
+};
+export declare type CanProduceByKind = {
     audio: boolean;
     video: boolean;
     [key: string]: boolean;
-}
-export interface IceParameters {
+};
+export declare type IceParameters = {
     /**
      * ICE username fragment.
      * */
@@ -40,8 +41,8 @@ export interface IceParameters {
      * ICE Lite.
      */
     iceLite?: boolean;
-}
-export interface IceCandidate {
+};
+export declare type IceCandidate = {
     /**
      * Unique identifier that allows ICE to correlate candidates that appear on
      * multiple transports.
@@ -71,8 +72,8 @@ export interface IceCandidate {
      * The type of TCP candidate.
      */
     tcpType: 'active' | 'passive' | 'so';
-}
-export interface DtlsParameters {
+};
+export declare type DtlsParameters = {
     /**
      * DTLS role. Default 'auto'.
      */
@@ -81,20 +82,25 @@ export interface DtlsParameters {
      * DTLS fingerprints.
      */
     fingerprints: DtlsFingerprint[];
-}
+};
 /**
  * The hash function algorithm (as defined in the "Hash function Textual Names"
  * registry initially specified in RFC 4572 Section 8) and its corresponding
  * certificate fingerprint value (in lowercase hex string as expressed utilizing
  * the syntax of "fingerprint" in RFC 4572 Section 5).
  */
-export interface DtlsFingerprint {
+export declare type DtlsFingerprint = {
     algorithm: string;
     value: string;
-}
+};
 export declare type DtlsRole = 'auto' | 'client' | 'server';
-export declare type ConnectionState = 'new' | 'connecting' | 'connected' | 'failed' | 'closed';
-export default class Transport extends EnhancedEventEmitter {
+export declare type ConnectionState = 'new' | 'connecting' | 'connected' | 'failed' | 'disconnected' | 'closed';
+export declare type PlainRtpParameters = {
+    ip: string;
+    ipVersion: 4 | 6;
+    port: number;
+};
+export declare class Transport extends EnhancedEventEmitter {
     private readonly _id;
     private _closed;
     private readonly _direction;
@@ -111,12 +117,12 @@ export default class Transport extends EnhancedEventEmitter {
     private _probatorConsumerCreated;
     private readonly _awaitQueue;
     /**
-     * @emits {transportLocalParameters: Object, callback: Function, errback: Function} connect
-     * @emits {connectionState: ConnectionState} connectionstatechange
-     * @emits {producerLocalParameters: Object, callback: Function, errback: Function} produce
-     * @emits {dataProducerLocalParameters: Object, callback: Function, errback: Function} producedata
+     * @emits connect - (transportLocalParameters: any, callback: Function, errback: Function)
+     * @emits connectionstatechange - (connectionState: ConnectionState)
+     * @emits produce - (producerLocalParameters: any, callback: Function, errback: Function)
+     * @emits producedata - (dataProducerLocalParameters: any, callback: Function, errback: Function)
      */
-    constructor({ direction, id, iceParameters, iceCandidates, dtlsParameters, sctpParameters, iceServers, iceTransportPolicy, additionalSettings, proprietaryConstraints, appData, Handler, extendedRtpCapabilities, canProduceByKind }: InternalTransportOptions);
+    constructor({ direction, id, iceParameters, iceCandidates, dtlsParameters, sctpParameters, iceServers, iceTransportPolicy, additionalSettings, proprietaryConstraints, appData, handlerFactory, extendedRtpCapabilities, canProduceByKind }: InternalTransportOptions);
     /**
      * Transport id.
      */
@@ -132,7 +138,7 @@ export default class Transport extends EnhancedEventEmitter {
     /**
      * RTC handler instance.
      */
-    readonly handler: any;
+    readonly handler: HandlerInterface;
     /**
      * Connection state.
      */
@@ -153,7 +159,7 @@ export default class Transport extends EnhancedEventEmitter {
      *
      * @returns {RTCStatsReport}
      */
-    getStats(): Promise<any>;
+    getStats(): Promise<RTCStatsReport>;
     /**
      * Restart ICE connection.
      */
@@ -169,7 +175,7 @@ export default class Transport extends EnhancedEventEmitter {
     /**
      * Create a Producer.
      */
-    produce({ track, encodings, codecOptions, appData }?: ProducerOptions): Promise<Producer>;
+    produce({ track, encodings, codecOptions, stopTracks, appData }?: ProducerOptions): Promise<Producer>;
     /**
      * Create a Consumer to consume a remote Producer.
      */

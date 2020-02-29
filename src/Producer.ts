@@ -1,21 +1,25 @@
-import Logger from './Logger';
-import EnhancedEventEmitter from './EnhancedEventEmitter';
+import { Logger } from './Logger';
+import { EnhancedEventEmitter } from './EnhancedEventEmitter';
 import { UnsupportedError, InvalidStateError } from './errors';
 import { RtpParameters } from './RtpParameters';
 
-export interface ProducerOptions {
+export type ProducerOptions =
+{
 	track?: MediaStreamTrack;
 	encodings?: RTCRtpEncodingParameters[];
 	codecOptions?: ProducerCodecOptions;
+	stopTracks?: boolean;
 	appData?: any;
 }
 
 // https://mediasoup.org/documentation/v3/mediasoup-client/api/#ProducerCodecOptions
-export interface ProducerCodecOptions {
+export type ProducerCodecOptions =
+{
 	opusStereo?: boolean;
 	opusFec?: boolean;
 	opusDtx?: boolean;
 	opusMaxPlaybackRate?: number;
+	opusPtime?: number;
 	videoGoogleStartBitrate?: number;
 	videoGoogleMaxBitrate?: number;
 	videoGoogleMinBitrate?: number;
@@ -23,38 +27,35 @@ export interface ProducerCodecOptions {
 
 const logger = new Logger('Producer');
 
-export default class Producer extends EnhancedEventEmitter
+export class Producer extends EnhancedEventEmitter
 {
 	// Id.
 	private readonly _id: string;
-
 	// Local id.
 	private readonly _localId: string;
-
 	// Closed flag.
 	private _closed = false;
-
+	// Associated RTCRtpSender.
+	private readonly _rtpSender?: RTCRtpSender;
 	// Local track.
 	private _track: MediaStreamTrack;
-
 	// RTP parameters.
 	private readonly _rtpParameters: RtpParameters;
-
 	// Paused flag.
 	private _paused: boolean;
-
 	// Video max spatial layer.
 	private _maxSpatialLayer: number | undefined;
-
+	// Whether the Producer should call stop() in given tracks.
+	private _stopTracks: boolean;
 	// App custom data.
 	private readonly _appData: any;
 
 	/**
 	 * @emits transportclose
 	 * @emits trackended
-	 * @emits {track: MediaStreamTrack} @replacetrack
-	 * @emits {spatialLayer: String} @setmaxspatiallayer
-	 * @emits {Object} @setrtpencodingparameters
+	 * @emits @replacetrack - (track: MediaStreamTrack)
+	 * @emits @setmaxspatiallayer - (spatialLayer: string)
+	 * @emits @setrtpencodingparameters - (params: any)
 	 * @emits @getstats
 	 * @emits @close
 	 */
@@ -62,27 +63,35 @@ export default class Producer extends EnhancedEventEmitter
 		{
 			id,
 			localId,
+			rtpSender,
 			track,
 			rtpParameters,
+			stopTracks,
 			appData
 		}:
 		{
 			id: string;
 			localId: string;
+			rtpSender?: RTCRtpSender;
 			track: MediaStreamTrack;
 			rtpParameters: RtpParameters;
+			stopTracks: boolean;
 			appData: any;
 		}
 	)
 	{
-		super(logger);
+		super();
+
+		logger.debug('constructor()');
 
 		this._id = id;
 		this._localId = localId;
+		this._rtpSender = rtpSender;
 		this._track = track;
 		this._rtpParameters = rtpParameters;
 		this._paused = !track.enabled;
 		this._maxSpatialLayer = undefined;
+		this._stopTracks = stopTracks;
 		this._appData = appData;
 		this._onTrackEnded = this._onTrackEnded.bind(this);
 
@@ -119,6 +128,14 @@ export default class Producer extends EnhancedEventEmitter
 	get kind(): string
 	{
 		return this._track.kind;
+	}
+
+	/**
+	 * Associated RTCRtpSender.
+	 */
+	get rtpSender(): RTCRtpSender | undefined
+	{
+		return this._rtpSender;
 	}
 
 	/**
@@ -263,8 +280,11 @@ export default class Producer extends EnhancedEventEmitter
 		{
 			// This must be done here. Otherwise there is no chance to stop the given
 			// track.
-			try { track.stop(); }
-			catch (error) {}
+			if (this._stopTracks)
+			{
+				try { track.stop(); }
+				catch (error) {}
+			}
 
 			throw new InvalidStateError('closed');
 		}
@@ -275,6 +295,14 @@ export default class Producer extends EnhancedEventEmitter
 		else if (track.readyState === 'ended')
 		{
 			throw new InvalidStateError('track ended');
+		}
+
+		// Do nothing if this is the same track as the current handled one.
+		if (track === this._track)
+		{
+			logger.debug('replaceTrack() | same track, ignored');
+
+			return;
 		}
 
 		await this.safeEmitAsPromise('@replacetrack', track);
@@ -346,7 +374,10 @@ export default class Producer extends EnhancedEventEmitter
 		try
 		{
 			this._track.removeEventListener('ended', this._onTrackEnded);
-			this._track.stop();
+
+			// Just stop the track unless the app set stopTracks: false.
+			if (this._stopTracks)
+				this._track.stop();
 		}
 		catch (error)
 		{}

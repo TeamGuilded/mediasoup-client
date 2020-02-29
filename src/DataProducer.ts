@@ -1,9 +1,9 @@
-import Logger from './Logger';
-import EnhancedEventEmitter from './EnhancedEventEmitter';
+import { Logger } from './Logger';
+import { EnhancedEventEmitter } from './EnhancedEventEmitter';
 import { InvalidStateError } from './errors';
 import { SctpStreamParameters } from './SctpParameters';
 
-export interface DataProducerOptions
+export type DataProducerOptions =
 {
 	ordered?: boolean;
 	maxPacketLifeTime?: number;
@@ -16,27 +16,23 @@ export interface DataProducerOptions
 
 const logger = new Logger('DataProducer');
 
-export default class DataProducer extends EnhancedEventEmitter
+export class DataProducer extends EnhancedEventEmitter
 {
 	// Id.
 	private readonly _id: string;
-
 	// The underlying RTCDataChannel instance.
 	private readonly _dataChannel: any;
-
 	// Closed flag.
 	private _closed = false;
-
 	// SCTP stream parameters.
 	private readonly _sctpStreamParameters: SctpStreamParameters;
-
 	// App custom data.
 	private readonly _appData: any;
 
 	/**
 	 * @emits transportclose
 	 * @emits open
-	 * @emits {Object} error
+	 * @emits error - (error: Error)
 	 * @emits close
 	 * @emits bufferedamountlow
 	 * @emits @close
@@ -56,7 +52,9 @@ export default class DataProducer extends EnhancedEventEmitter
 		}
 	)
 	{
-		super(logger);
+		super();
+
+		logger.debug('constructor()');
 
 		this._id = id;
 		this._dataChannel = dataChannel;

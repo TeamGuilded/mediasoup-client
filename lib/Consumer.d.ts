@@ -1,17 +1,18 @@
-import EnhancedEventEmitter from './EnhancedEventEmitter';
+import { EnhancedEventEmitter } from './EnhancedEventEmitter';
 import { RtpParameters } from './RtpParameters';
-export interface ConsumerOptions {
+export declare type ConsumerOptions = {
     id?: string;
     producerId?: string;
     kind?: 'audio' | 'video';
     rtpParameters?: RtpParameters;
     appData?: any;
-}
-export default class Consumer extends EnhancedEventEmitter {
+};
+export declare class Consumer extends EnhancedEventEmitter {
     private readonly _id;
     private readonly _localId;
     private readonly _producerId;
     private _closed;
+    private readonly _rtpReceiver?;
     private readonly _track;
     private readonly _rtpParameters;
     private _paused;
@@ -22,10 +23,11 @@ export default class Consumer extends EnhancedEventEmitter {
      * @emits @getstats
      * @emits @close
      */
-    constructor({ id, localId, producerId, track, rtpParameters, appData }: {
+    constructor({ id, localId, producerId, rtpReceiver, track, rtpParameters, appData }: {
         id: string;
         localId: string;
         producerId: string;
+        rtpReceiver?: RTCRtpReceiver;
         track: MediaStreamTrack;
         rtpParameters: RtpParameters;
         appData: any;
@@ -50,6 +52,10 @@ export default class Consumer extends EnhancedEventEmitter {
      * Media kind.
      */
     readonly kind: string;
+    /**
+     * Associated RTCRtpReceiver.
+     */
+    readonly rtpReceiver: RTCRtpReceiver | undefined;
     /**
      * The associated track.
      */

@@ -1,43 +1,49 @@
-import EnhancedEventEmitter from './EnhancedEventEmitter';
+import { EnhancedEventEmitter } from './EnhancedEventEmitter';
 import { RtpParameters } from './RtpParameters';
-export interface ProducerOptions {
+export declare type ProducerOptions = {
     track?: MediaStreamTrack;
     encodings?: RTCRtpEncodingParameters[];
     codecOptions?: ProducerCodecOptions;
+    stopTracks?: boolean;
     appData?: any;
-}
-export interface ProducerCodecOptions {
+};
+export declare type ProducerCodecOptions = {
     opusStereo?: boolean;
     opusFec?: boolean;
     opusDtx?: boolean;
     opusMaxPlaybackRate?: number;
+    opusPtime?: number;
     videoGoogleStartBitrate?: number;
     videoGoogleMaxBitrate?: number;
     videoGoogleMinBitrate?: number;
-}
-export default class Producer extends EnhancedEventEmitter {
+};
+export declare class Producer extends EnhancedEventEmitter {
     private readonly _id;
     private readonly _localId;
     private _closed;
+    private readonly _rtpSender?;
     private _track;
     private readonly _rtpParameters;
     private _paused;
     private _maxSpatialLayer;
+    private _stopTracks;
     private readonly _appData;
     /**
      * @emits transportclose
      * @emits trackended
-     * @emits {track: MediaStreamTrack} @replacetrack
-     * @emits {spatialLayer: String} @setmaxspatiallayer
-     * @emits {Object} @setrtpencodingparameters
+     * @emits @replacetrack - (track: MediaStreamTrack)
+     * @emits @setmaxspatiallayer - (spatialLayer: string)
+     * @emits @setrtpencodingparameters - (params: any)
      * @emits @getstats
      * @emits @close
      */
-    constructor({ id, localId, track, rtpParameters, appData }: {
+    constructor({ id, localId, rtpSender, track, rtpParameters, stopTracks, appData }: {
         id: string;
         localId: string;
+        rtpSender?: RTCRtpSender;
         track: MediaStreamTrack;
         rtpParameters: RtpParameters;
+        stopTracks: boolean;
         appData: any;
     });
     /**
@@ -56,6 +62,10 @@ export default class Producer extends EnhancedEventEmitter {
      * Media kind.
      */
     readonly kind: string;
+    /**
+     * Associated RTCRtpSender.
+     */
+    readonly rtpSender: RTCRtpSender | undefined;
     /**
      * The associated track.
      */
